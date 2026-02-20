@@ -1,0 +1,47 @@
+name: Java CI/CD to AWS EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    # This is a temporary GitHub computer used ONLY for building the JAR
+    runs-on: ubuntu-latest 
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # This runs on the GitHub Ubuntu runner
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+      # This step connects GITHUB to your AWS SERVER
+      - name: Copy JAR to AWS Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}      # Your AWS IP
+          username: ${{ secrets.EC2_USER }}  # Your AWS User (ec2-user)
+          key: ${{ secrets.EC2_KEY }}        # Your Private Key
+          source: "target/*.jar"
+          target: "/home/ec2-user/app"
+          strip_components: 1
+
+      # This step executes commands INSIDE your AWS SERVER
+      - name: Restart App on AWS Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            sudo pkill -f java || true
+            nohup java -jar /home/ec2-user/app/*.jar > /home/ec2-user/app/app.log 2>&1 &
