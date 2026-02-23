@@ -6,8 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest 
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -22,9 +21,6 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: List target directory
-        run: ls -R target/
-
       - name: Copy Artifact to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -35,7 +31,6 @@ jobs:
           target: "/home/ec2-user/app"
           strip_components: 1
           overwrite: true
-          debug: true  # Added to see connection details
 
       - name: Restart App on AWS Server
         uses: appleboy/ssh-action@v1.0.3
@@ -43,14 +38,24 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          debug: true # Added to see connection details
           script: |
-            mkdir -p /home/ec2-user/app
+            # 1. Fix permissions in case root created the folder
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/ec2-user/app
+            
             cd /home/ec2-user/app
-            # Kill existing java process if running
+            
+            # 2. Kill existing java process
             sudo pkill -f java || true
-            # Clean up old logs
-            rm -f app.log
-            # Run the new WAR file in the background
+            
+            # 3. Start the app
+            # Using 'disown' and 'sleep' prevents the 143 termination error
             nohup java -jar *.war > app.log 2>&1 &
-            echo "Deployment complete. App is starting..."
+            
+            # 4. Give the app time to initialize
+            sleep 10
+            
+            # 5. Output the last few lines of the log to verify it started
+            echo "--- Application Logs ---"
+            tail -n 20 app.log
+            
+            echo "Deployment complete."
