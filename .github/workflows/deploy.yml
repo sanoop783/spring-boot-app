@@ -31,25 +31,26 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: "target/*.war"  # Changed from .jar to .war to match your pom.xml
+          source: "target/*.war"
           target: "/home/ec2-user/app"
           strip_components: 1
           overwrite: true
+          debug: true  # Added to see connection details
 
       - name: Restart App on AWS Server
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
+          debug: true # Added to see connection details
           script: |
             mkdir -p /home/ec2-user/app
             cd /home/ec2-user/app
             # Kill existing java process if running
             sudo pkill -f java || true
-            # Clean up old logs if they exist
+            # Clean up old logs
             rm -f app.log
             # Run the new WAR file in the background
-            # Note: Spring Boot executable WARs run exactly like JARs
             nohup java -jar *.war > app.log 2>&1 &
             echo "Deployment complete. App is starting..."
