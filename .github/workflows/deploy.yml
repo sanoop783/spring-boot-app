@@ -22,7 +22,6 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      # This step helps you see exactly what was built if the next step fails
       - name: List target directory
         run: ls -R target/
 
@@ -34,7 +33,8 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           source: "target/*.jar"
           target: "/home/ec2-user/app"
-          strip_components: 1 
+          strip_components: 1
+          overwrite: true
 
       - name: Restart App on AWS Server
         uses: appleboy/ssh-action@v1.0.0
@@ -47,6 +47,6 @@ jobs:
             cd /home/ec2-user/app
             # Kill existing java process if running
             sudo pkill -f java || true
-            # Start the new jar in the background
+            # Run the new JAR in the background and save logs to app.log
             nohup java -jar *.jar > app.log 2>&1 &
-            echo "Application started successfully."
+            echo "Deployment complete and app starting..."
