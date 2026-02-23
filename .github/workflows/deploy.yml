@@ -25,13 +25,13 @@ jobs:
       - name: List target directory
         run: ls -R target/
 
-      - name: Copy JAR to EC2
+      - name: Copy Artifact to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: "target/*.jar"
+          source: "target/*.war"  # Changed from .jar to .war to match your pom.xml
           target: "/home/ec2-user/app"
           strip_components: 1
           overwrite: true
@@ -47,6 +47,9 @@ jobs:
             cd /home/ec2-user/app
             # Kill existing java process if running
             sudo pkill -f java || true
-            # Run the new JAR in the background and save logs to app.log
-            nohup java -jar *.jar > app.log 2>&1 &
-            echo "Deployment complete and app starting..."
+            # Clean up old logs if they exist
+            rm -f app.log
+            # Run the new WAR file in the background
+            # Note: Spring Boot executable WARs run exactly like JARs
+            nohup java -jar *.war > app.log 2>&1 &
+            echo "Deployment complete. App is starting..."
