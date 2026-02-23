@@ -39,23 +39,35 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # 1. Fix permissions in case root created the folder
-            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/ec2-user/app
+            # 1. Ensure directory exists and fix permissions
+            sudo mkdir -p /home/${{ secrets.EC2_USER }}/app
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/app
+            cd /home/${{ secrets.EC2_USER }}/app
+
+            # 2. Kill any old java process (forceful kill to free port)
+            sudo pkill -9 -f java || true
+
+            # 3. Start the app in a detached subshell
+            # The parentheses and & disown it from the current session
+            (nohup java -jar *.war > app.log 2>&1 &)
             
-            cd /home/ec2-user/app
-            
-            # 2. Kill existing java process
-            sudo pkill -f java || true
-            
-            # 3. Start the app
-            # Using 'disown' and 'sleep' prevents the 143 termination error
-            nohup java -jar *.war > app.log 2>&1 &
-            
-            # 4. Give the app time to initialize
+            # 4. Wait for the app to initialize
             sleep 10
+            disown -a
             
-            # 5. Output the last few lines of the log to verify it started
-            echo "--- Application Logs ---"
-            tail -n 20 app.log
+            # 5. Show logs to confirm success in GitHub console
+            echo "--- Latest App Logs ---"
+            if [ -f app.log ]; then
+                tail -n 20 app.log
+            else
+                echo "Log file not found!"
+            fi
             
-            echo "Deployment complete."
+            # 6. Final check: Is the process actually alive?
+            if pgrep -f java > /dev/null; then
+                echo "Deployment Successful! Java process is running."
+                pgrep -fl java
+            else
+                echo "Deployment Failed! Java process is not running."
+                exit 1
+            fi
