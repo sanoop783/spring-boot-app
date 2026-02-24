@@ -29,19 +29,19 @@ jobs:
           fi
           echo "Found WAR at: $WAR_PATH"
 
-      - name: Copy WAR to EC2
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: "target/springboot-hello-0.0.1-SNAPSHOT.war"
-          target: "/home/ec2-user/app"
-          strip_components: 1
-          rm: true
-          # Increased timeouts to prevent Status 142
-          timeout: 60s
-          command_timeout: 10m
+      # REPLACED appleboy/scp-action with Debugging SCP
+      - name: Debug Connection and Copy
+        run: |
+          echo "${{ secrets.EC2_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          
+          # Create target directory first to avoid errors
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p /home/ec2-user/app"
+          
+          # Verbose copy
+          scp -v -o StrictHostKeyChecking=no -i private_key.pem target/springboot-hello-0.0.1-SNAPSHOT.war ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/app/
+          
+          rm private_key.pem
 
       - name: Restart Application on EC2
         uses: appleboy/ssh-action@master
@@ -49,18 +49,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          # Added timeout here as well for consistency
           command_timeout: 5m
           script: |
-            mkdir -p /home/ec2-user/app
             cd /home/ec2-user/app || exit
-            
-            # Kill process on 8080 if it exists
             sudo fuser -k 8080/tcp || true
-            
-            # Identify and run the new WAR
             APP_WAR=$(ls -S *.war | grep -v "plain" | head -1)
             nohup java -jar "$APP_WAR" > app.log 2>&1 &
-            
             sleep 5
             ps aux | grep java | grep -v grep
