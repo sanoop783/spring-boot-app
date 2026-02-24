@@ -18,27 +18,25 @@ jobs:
           cache: maven
 
       - name: Build with Maven
-        # We ensure the JAR is built. 
-        # Note: If your project is a multi-module project, the JAR might be in a subfolder!
         run: mvn clean package -DskipTests
 
-      - name: Verify Build Output (Debug)
-        # This step confirms the file exists before SCP tries to grab it
-        run: ls -l target/
+      - name: Verify Build Output
+        # This prevents the SCP error by failing early if the file is missing
+        run: |
+          ls -l target/*.jar || (echo "No JAR found in target folder!" && exit 1)
 
-      - name: Copy JAR to EC2
+      - name: Copy JAR to EC2 via SCP
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          # Use a more specific pattern to avoid 'plain' jars if possible
           source: "target/*.jar"
           target: "/home/ec2-user/app"
           strip_components: 1
           rm: true
 
-      - name: Restart Application on EC2
+      - name: Restart Application on EC2 via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -47,16 +45,16 @@ jobs:
           script: |
             cd /home/ec2-user/app || exit
             
-            # 1. Stop the existing app (Port 8080)
+            # 1. Stop existing app (Port 8080)
             sudo fuser -k 8080/tcp || true
             
-            # 2. Identify the correct JAR (Avoiding the -plain.jar if it exists)
-            # This finds the largest JAR, which is usually the executable one
+            # 2. Identify the largest JAR (ignores the -plain.jar if present)
             APP_JAR=$(ls -S *.jar | head -1)
             
-            # 3. Run the application
-            noh)up java -jar "$APP_JAR" > app.log 2>&1 &
+            # 3. Clean logs and start application
+            rm -f app.log
+            nohup java -jar "$APP_JAR" > app.log 2>&1 &
             
-            # 4. Give it a moment to start and check if it's running
+            # 4. Success verification
             sleep 5
-            ps aux | grep java
+            ps aux | grep java | grep -v grep
