@@ -1,4 +1,4 @@
-name: Spring Boot CI/CD to AWS EC2 (WAR)
+name: Spring Boot CI/CD (WAR) to EC2
 on:
   push:
     branches: [ "main" ]
@@ -22,7 +22,8 @@ jobs:
 
       - name: Locate WAR and Verify
         run: |
-          WAR_PATH=$(find . -path "*/target/*.war" | head -n 1)
+          # Finding the .war file now
+          WAR_PATH=$(find . -path "*/target/*.war" ! -name "*plain.war" | head -n 1)
           if [ -z "$WAR_PATH" ]; then
             echo "::error::No WAR file found!"
             exit 1
@@ -35,7 +36,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: "**/target/*.war"
+          source: "**/target/*.war" # Updated to .war
           target: "/home/ec2-user/app"
           strip_components: 2
           rm: true
@@ -50,10 +51,10 @@ jobs:
             cd /home/ec2-user/app || exit
             sudo fuser -k 8080/tcp || true
             
-            # Find the WAR file
-            APP_WAR=$(ls -S *.war | head -1)
+            # Look for the .war file specifically
+            APP_WAR=$(ls -S *.war | grep -v "plain" | head -1)
             
-            # Run WAR just like a JAR (Spring Boot executable WAR)
+            # Executable WARs run exactly like JARs
             nohup java -jar "$APP_WAR" > app.log 2>&1 &
             
             sleep 5
