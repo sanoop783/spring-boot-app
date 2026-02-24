@@ -18,7 +18,13 @@ jobs:
           cache: maven
 
       - name: Build with Maven
+        # We ensure the JAR is built. 
+        # Note: If your project is a multi-module project, the JAR might be in a subfolder!
         run: mvn clean package -DskipTests
+
+      - name: Verify Build Output (Debug)
+        # This step confirms the file exists before SCP tries to grab it
+        run: ls -l target/
 
       - name: Copy JAR to EC2
         uses: appleboy/scp-action@master
@@ -26,11 +32,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
+          # Use a more specific pattern to avoid 'plain' jars if possible
           source: "target/*.jar"
           target: "/home/ec2-user/app"
           strip_components: 1
-          # Removes old JARs before copying to prevent wildcard conflicts
-          rm: true 
+          rm: true
 
       - name: Restart Application on EC2
         uses: appleboy/ssh-action@master
@@ -39,16 +45,18 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # Navigate and ensure script doesn't fail if dir is missing
             cd /home/ec2-user/app || exit
             
-            # Kill the process running on port 8080 (more precise than pkill java)
+            # 1. Stop the existing app (Port 8080)
             sudo fuser -k 8080/tcp || true
             
-            # Clean up logs and old files
-            rm -f app.log
+            # 2. Identify the correct JAR (Avoiding the -plain.jar if it exists)
+            # This finds the largest JAR, which is usually the executable one
+            APP_JAR=$(ls -S *.jar | head -1)
             
-            # Run the application
-            # Using 'disown' ensures the process isn't killed when the SSH session ends
-            nohup java -jar *.jar > app.log 2>&1 &
-            disown
+            # 3. Run the application
+            noh)up java -jar "$APP_JAR" > app.log 2>&1 &
+            
+            # 4. Give it a moment to start and check if it's running
+            sleep 5
+            ps aux | grep java
