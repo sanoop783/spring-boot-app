@@ -20,28 +20,26 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Locate WAR and Verify
-        run: |
-          WAR_PATH=$(find . -path "*/target/*.war" ! -name "*plain.war" | head -n 1)
-          if [ -z "$WAR_PATH" ]; then
-            echo "::error::No WAR file found!"
-            exit 1
-          fi
-          echo "Found WAR at: $WAR_PATH"
+      - name: Prepare Target Directory
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            sudo mkdir -p /home/${{ secrets.EC2_USER }}/app
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/app
 
-      # REPLACED appleboy/scp-action with Debugging SCP
-      - name: Debug Connection and Copy
-        run: |
-          echo "${{ secrets.EC2_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-          
-          # Create target directory first to avoid errors
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p /home/ec2-user/app"
-          
-          # Verbose copy
-          scp -v -o StrictHostKeyChecking=no -i private_key.pem target/springboot-hello-0.0.1-SNAPSHOT.war ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/app/
-          
-          rm private_key.pem
+      - name: Copy WAR to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "target/springboot-hello-0.0.1-SNAPSHOT.war"
+          target: "/home/${{ secrets.EC2_USER }}/app"
+          strip_components: 1
+          rm: true
 
       - name: Restart Application on EC2
         uses: appleboy/ssh-action@master
@@ -49,9 +47,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          command_timeout: 5m
           script: |
-            cd /home/ec2-user/app || exit
+            cd /home/${{ secrets.EC2_USER }}/app || exit
             sudo fuser -k 8080/tcp || true
             APP_WAR=$(ls -S *.war | grep -v "plain" | head -1)
             nohup java -jar "$APP_WAR" > app.log 2>&1 &
