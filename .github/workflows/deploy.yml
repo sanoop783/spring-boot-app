@@ -21,10 +21,15 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Verify Build Output
-        # Uses 'find' to ensure we see JARs even in sub-modules
+      - name: Locate JAR and Verify
+        # This step finds where the JAR actually is and fails the build if missing
         run: |
-          find . -path "*/target/*.jar" -ls || (echo "No JAR found!" && exit 1)
+          JAR_PATH=$(find . -path "*/target/*.jar" ! -name "*plain.jar" | head -n 1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::No executable JAR found in any target directory!"
+            exit 1
+          fi
+          echo "Found JAR at: $JAR_PATH"
 
       - name: Copy JAR to EC2
         uses: appleboy/scp-action@master
@@ -32,14 +37,14 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          # The glob pattern below finds JARs in any target folder
+          # Use the double-star glob to find the JAR anywhere in the project
           source: "**/target/*.jar"
           target: "/home/ec2-user/app"
-          # strip_components: 2 removes 'module-name/target/' from the path
+          # strip_components: 2 removes 'folder/target/' from the path on the remote side
           strip_components: 2 
           rm: true
 
-      - name: Restart Application on EC2 via SSH
+      - name: Restart Application on EC2
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -48,16 +53,15 @@ jobs:
           script: |
             cd /home/ec2-user/app || exit
             
-            # 1. Stop existing app (Port 8080)
+            # 1. Stop the process currently using port 8080
             sudo fuser -k 8080/tcp || true
             
-            # 2. Identify the largest JAR (executable) and ignore -plain.jar
+            # 2. Identify the executable JAR (ignores the 'plain' metadata JAR)
             APP_JAR=$(ls -S *.jar | grep -v "plain" | head -1)
             
-            # 3. Clean logs and start application
-            rm -f app.log
+            # 3. Start the application in the background
             nohup java -jar "$APP_JAR" > app.log 2>&1 &
             
-            # 4. Verify process is running
+            # 4. Final check
             sleep 5
             ps aux | grep java | grep -v grep
