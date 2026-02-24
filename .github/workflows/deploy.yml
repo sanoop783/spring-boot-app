@@ -1,5 +1,4 @@
-name: Spring Boot CI/CD to AWS EC2
-
+name: Spring Boot CI/CD to AWS EC2 (WAR)
 on:
   push:
     branches: [ "main" ]
@@ -21,27 +20,24 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Locate JAR and Verify
-        # This step finds where the JAR actually is and fails the build if missing
+      - name: Locate WAR and Verify
         run: |
-          JAR_PATH=$(find . -path "*/target/*.jar" ! -name "*plain.jar" | head -n 1)
-          if [ -z "$JAR_PATH" ]; then
-            echo "::error::No executable JAR found in any target directory!"
+          WAR_PATH=$(find . -path "*/target/*.war" | head -n 1)
+          if [ -z "$WAR_PATH" ]; then
+            echo "::error::No WAR file found!"
             exit 1
           fi
-          echo "Found JAR at: $JAR_PATH"
+          echo "Found WAR at: $WAR_PATH"
 
-      - name: Copy JAR to EC2
+      - name: Copy WAR to EC2
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          # Use the double-star glob to find the JAR anywhere in the project
-          source: "**/target/*.jar"
+          source: "**/target/*.war"
           target: "/home/ec2-user/app"
-          # strip_components: 2 removes 'folder/target/' from the path on the remote side
-          strip_components: 2 
+          strip_components: 2
           rm: true
 
       - name: Restart Application on EC2
@@ -52,16 +48,13 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             cd /home/ec2-user/app || exit
-            
-            # 1. Stop the process currently using port 8080
             sudo fuser -k 8080/tcp || true
             
-            # 2. Identify the executable JAR (ignores the 'plain' metadata JAR)
-            APP_JAR=$(ls -S *.jar | grep -v "plain" | head -1)
+            # Find the WAR file
+            APP_WAR=$(ls -S *.war | head -1)
             
-            # 3. Start the application in the background
-            nohup java -jar "$APP_JAR" > app.log 2>&1 &
+            # Run WAR just like a JAR (Spring Boot executable WAR)
+            nohup java -jar "$APP_WAR" > app.log 2>&1 &
             
-            # 4. Final check
             sleep 5
             ps aux | grep java | grep -v grep
